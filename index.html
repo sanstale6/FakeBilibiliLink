@@ -1,0 +1,213 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Fake Bilibili Link Generator</title>
+    <link
+      rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css"
+    />
+    <style>
+      :root {
+        --pico-font-size: 95%;
+      }
+      body {
+        min-height: 100vh;
+        display: grid;
+        place-items: center;
+        padding: 1rem;
+      }
+      main {
+        width: min(760px, 100%);
+      }
+      .result {
+        margin-top: 1rem;
+        word-break: break-all;
+      }
+      .actions {
+        display: flex;
+        gap: 0.75rem;
+        flex-wrap: wrap;
+      }
+    </style>
+  </head>
+  <body>
+    <main class="container">
+      <article>
+        <h1>Fake Bilibili Link 生成器</h1>
+        <p>输入“显示视频链接”和“实际跳转链接”，输出 b23 假链接。</p>
+
+        <label for="display-link">显示视频链接（bilibili 或 b23）</label>
+        <input
+          id="display-link"
+          type="url"
+          placeholder="https://www.bilibili.com/video/BVxxxx"
+        />
+
+        <label for="actual-link">实际跳转链接（bilibili 或 b23）</label>
+        <input
+          id="actual-link"
+          type="url"
+          placeholder="https://space.bilibili.com/xxxx"
+        />
+
+        <div class="actions">
+          <button id="generate-btn">生成假链接</button>
+          <button id="copy-btn" class="secondary" disabled>复制结果</button>
+        </div>
+
+        <small id="status-text"></small>
+        <p id="result-text" class="result" hidden></p>
+      </article>
+    </main>
+
+    <script>
+      const displayInput = document.getElementById("display-link");
+      const actualInput = document.getElementById("actual-link");
+      const generateBtn = document.getElementById("generate-btn");
+      const copyBtn = document.getElementById("copy-btn");
+      const statusText = document.getElementById("status-text");
+      const resultText = document.getElementById("result-text");
+
+      const B23_API = "https://api.bilibili.com/x/share/click";
+      const BILIBILI_HOST_PATTERN = /(^|\.)((bilibili\.com)|(hdslb\.com))$/i;
+      const B23_HOST_PATTERN = /(^|\.)b23\.tv$/i;
+      const BV_PATTERN = /BV[0-9A-Za-z]{10}/;
+
+      function setStatus(text, isError = false) {
+        statusText.textContent = text;
+        statusText.style.color = isError ? "var(--pico-del-color)" : "";
+      }
+
+      function randomBuvid() {
+        const chars = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ";
+        let id = "";
+        for (let i = 0; i < 32; i += 1) {
+          id += chars[Math.floor(Math.random() * chars.length)];
+        }
+        return `${id}infoc`;
+      }
+
+      function extractFirstPathSegment(urlObj) {
+        const segment = urlObj.pathname.split("/").filter(Boolean)[0];
+        return segment || "";
+      }
+
+      function parseUrlOrThrow(raw) {
+        const input = raw.trim();
+        const candidate = /^https?:\/\//i.test(input) ? input : `https://${input}`;
+        try {
+          return new URL(candidate);
+        } catch {
+          throw new Error(`无效链接：${raw}`);
+        }
+      }
+
+      async function convertToB23Segment(longUrl) {
+        const form = new URLSearchParams({
+          build: "6500300",
+          buvid: randomBuvid(),
+          oid: longUrl,
+          platform: "android",
+          share_channel: "COPY",
+          share_id: "public.webview.0.0.pv",
+          share_mode: "3",
+        });
+
+        const response = await fetch(B23_API, {
+          method: "POST",
+          body: form,
+        });
+        if (!response.ok) {
+          throw new Error("请求 b23 转换接口失败");
+        }
+
+        const payload = await response.json();
+        const shortLink = payload?.data?.content;
+        if (!shortLink) {
+          throw new Error("b23 转换失败，请检查输入链接是否可被转换");
+        }
+
+        const shortUrl = parseUrlOrThrow(shortLink);
+        const segment = extractFirstPathSegment(shortUrl);
+        if (!segment) {
+          throw new Error("b23 转换结果异常");
+        }
+        return segment;
+      }
+
+      async function getDisplaySegment(rawUrl) {
+        const url = parseUrlOrThrow(rawUrl);
+        if (B23_HOST_PATTERN.test(url.hostname)) {
+          const segment = extractFirstPathSegment(url);
+          if (!segment) throw new Error("显示链接缺少 b23 路径");
+          return segment;
+        }
+
+        if (!BILIBILI_HOST_PATTERN.test(url.hostname)) {
+          throw new Error("显示链接仅支持 bilibili 或 b23 域名");
+        }
+
+        const match = `${url.pathname}${url.search}${url.hash}`.match(BV_PATTERN);
+        return match ? match[0] : convertToB23Segment(url.toString());
+      }
+
+      async function getActualSegment(rawUrl) {
+        const url = parseUrlOrThrow(rawUrl);
+        if (B23_HOST_PATTERN.test(url.hostname)) {
+          const segment = extractFirstPathSegment(url);
+          if (!segment) throw new Error("实际链接缺少 b23 路径");
+          return segment;
+        }
+
+        if (!BILIBILI_HOST_PATTERN.test(url.hostname)) {
+          throw new Error("实际链接仅支持 bilibili 或 b23 域名");
+        }
+
+        return convertToB23Segment(url.toString());
+      }
+
+      async function generateFakeLink() {
+        const displayRaw = displayInput.value.trim();
+        const actualRaw = actualInput.value.trim();
+        if (!displayRaw || !actualRaw) {
+          throw new Error("请先填写两个链接");
+        }
+
+        const [displaySegment, actualSegment] = await Promise.all([
+          getDisplaySegment(displayRaw),
+          getActualSegment(actualRaw),
+        ]);
+
+        return `https://b23.tv/${displaySegment}/../${actualSegment}`;
+      }
+
+      generateBtn.addEventListener("click", async () => {
+        copyBtn.disabled = true;
+        resultText.hidden = true;
+        setStatus("正在生成...");
+
+        try {
+          const fakeLink = await generateFakeLink();
+          resultText.textContent = fakeLink;
+          resultText.hidden = false;
+          copyBtn.disabled = false;
+          setStatus("生成成功");
+        } catch (error) {
+          setStatus(error.message || "生成失败", true);
+        }
+      });
+
+      copyBtn.addEventListener("click", async () => {
+        if (!resultText.textContent) return;
+        try {
+          await navigator.clipboard.writeText(resultText.textContent);
+          setStatus("已复制到剪贴板");
+        } catch {
+          setStatus("复制失败，请手动复制", true);
+        }
+      });
+    </script>
+  </body>
+</html>
