@@ -70,7 +70,7 @@
       const statusText = document.getElementById("status-text");
       const resultText = document.getElementById("result-text");
 
-      const B23_API = "https://api.bilibili.com/x/share/click";
+      const B23_API = "/api/b23-convert";
       const BILIBILI_HOST_PATTERN = /(^|\.)((bilibili\.com)|(hdslb\.com))$/i;
       const B23_HOST_PATTERN = /(^|\.)b23\.tv$/i;
       const BV_PATTERN = /BV[0-9A-Za-z]{10}/;
@@ -105,22 +105,24 @@
       }
 
       async function convertToB23Segment(longUrl) {
-        const form = new URLSearchParams({
-          build: "6500300",
-          buvid: randomBuvid(),
-          oid: longUrl,
-          platform: "android",
-          share_channel: "COPY",
-          share_id: "public.webview.0.0.pv",
-          share_mode: "3",
-        });
-
-        const response = await fetch(B23_API, {
-          method: "POST",
-          body: form,
-        });
+        let response;
+        try {
+          response = await fetch(B23_API, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              longUrl,
+              buvid: randomBuvid(),
+            }),
+          });
+        } catch {
+          throw new Error("网络请求失败：无法访问本地转换接口");
+        }
         if (!response.ok) {
-          throw new Error("请求 b23 转换接口失败");
+          const payload = await response.json().catch(() => null);
+          throw new Error(payload?.message || "请求 b23 转换接口失败");
         }
 
         const payload = await response.json();
@@ -137,6 +139,11 @@
         return segment;
       }
 
+      function extractBvSegment(urlObj) {
+        const match = `${urlObj.pathname}${urlObj.search}${urlObj.hash}`.match(BV_PATTERN);
+        return match ? match[0] : "";
+      }
+
       async function getDisplaySegment(rawUrl) {
         const url = parseUrlOrThrow(rawUrl);
         if (B23_HOST_PATTERN.test(url.hostname)) {
@@ -149,8 +156,8 @@
           throw new Error("显示链接仅支持 bilibili 或 b23 域名");
         }
 
-        const match = `${url.pathname}${url.search}${url.hash}`.match(BV_PATTERN);
-        return match ? match[0] : convertToB23Segment(url.toString());
+        const bv = extractBvSegment(url);
+        return bv || convertToB23Segment(url.toString());
       }
 
       async function getActualSegment(rawUrl) {
@@ -164,6 +171,9 @@
         if (!BILIBILI_HOST_PATTERN.test(url.hostname)) {
           throw new Error("实际链接仅支持 bilibili 或 b23 域名");
         }
+
+        const bv = extractBvSegment(url);
+        if (bv) return bv;
 
         return convertToB23Segment(url.toString());
       }
