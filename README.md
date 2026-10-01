@@ -10,8 +10,18 @@
 
 ## 本地使用
 
-直接用浏览器打开 `/home/runner/work/FakeBilibiliLink/FakeBilibiliLink/index.html` 即可。
+本项目包含一个本地 API 路由用于 b23 转换（避免浏览器跨域导致的 `Failed to fetch`）。
+
+建议使用 Vercel 本地开发服务器运行：
+
+```bash
+npm i -g vercel
+vercel dev
+```
+
+然后访问 `http://localhost:3000`。
 
 ## 部署到 Vercel
 
-该项目是纯静态站点，直接导入仓库到 Vercel 即可部署，无需额外构建配置。
+该项目前端是静态页面，b23 转换通过 `/api/b23-convert` Vercel Serverless Function 代理调用 bilibili 接口。  
+直接导入仓库到 Vercel 即可部署，无需额外构建配置。
