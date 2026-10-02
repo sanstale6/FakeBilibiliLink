@@ -25,3 +25,7 @@ vercel dev
 
 该项目前端是静态页面，b23 转换通过 `/api/b23-convert` Vercel Serverless Function 代理调用 bilibili 接口。  
 直接导入仓库到 Vercel 即可部署，无需额外构建配置。
+
+## License
+
+MIT
